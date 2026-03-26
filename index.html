@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>FARAONCHAT</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-yellow-500 h-screen flex flex-col p-4">
+    <div class="max-w-md mx-auto w-full flex flex-col h-full border border-yellow-900 rounded-2xl p-4 shadow-2xl bg-gray-950">
+        
+        <div class="flex items-center gap-3 mb-4 border-b border-yellow-800 pb-2">
+            <img src="https://api.dicebear.com/8.x/bottts/svg?seed=FaraonChat&backgroundColor=b6e3f4" class="w-12 h-12 rounded-full border border-yellow-500 shadow-md shadow-yellow-500/20">
+            <div>
+                <h1 class="text-2xl font-black italic tracking-tighter">FARAONCHAT</h1>
+                <div id="status" class="text-[10px] text-gray-500 uppercase font-bold">Офлайн</div>
+            </div>
+        </div>
+
+        <div id="auth" class="space-y-4 my-auto">
+            <div class="text-center mb-6">
+                <p class="text-sm text-yellow-700 font-bold uppercase tracking-widest">Вход в гробницу</p>
+            </div>
+            <input id="u" type="text" placeholder="Имя пользователя" class="w-full p-3 rounded-xl bg-gray-900 border border-yellow-900 outline-none focus:ring-1 focus:ring-yellow-500 transition-all text-white">
+            <input id="p" type="password" placeholder="Пароль" class="w-full p-3 rounded-xl bg-gray-900 border border-yellow-900 outline-none focus:ring-1 focus:ring-yellow-500 transition-all text-white">
+            <button onclick="auth()" class="w-full bg-yellow-600 text-black font-black p-3 rounded-xl hover:bg-yellow-500 active:scale-95 transition-all shadow-lg shadow-yellow-600/20">ВОЙТИ</button>
+            <p class="text-[10px] text-center text-gray-600 italic">Если ты новый пользователь, аккаунт создастся автоматически при первом входе.</p>
+        </div>
+
+        <div id="chat" class="hidden flex-col h-full overflow-hidden">
+            <div id="msgs" class="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 custom-scrollbar"></div>
+            
+            <div class="flex flex-col gap-2 border-t border-yellow-900 pt-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold text-yellow-700 uppercase">Кому:</span>
+                    <input id="to" type="text" placeholder="Username..." class="flex-1 bg-transparent text-sm text-yellow-500 outline-none border-b border-yellow-900 focus:border-yellow-500 transition-all">
+                </div>
+                <div class="flex gap-2">
+                    <input id="m" type="text" placeholder="Твое слово..." class="flex-1 p-3 rounded-xl bg-gray-900 border border-yellow-900 outline-none focus:ring-1 focus:ring-yellow-500 text-white shadow-inner">
+                    <button onclick="send()" class="bg-yellow-600 text-black px-5 rounded-xl font-black hover:bg-yellow-500 active:scale-90 transition-all shadow-lg shadow-yellow-600/20">></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws, my;
+
+        // Генератор аватарок по имени
+        function getAvatar(name) {
+            return `https://api.dicebear.com/8.x/avataaars/svg?seed=${name}&backgroundColor=d4a72c`;
+        }
+
+        async function auth() {
+            const u = document.getElementById('u').value.trim();
+            const p = document.getElementById('p').value;
+            if(!u || !p) return alert("Представься, путник!");
+
+            // 1. Пытаемся зарегистрироваться (игнорируем ошибку, если юзер уже есть)
+            await fetch('/register', {
+                method:'POST', 
+                headers:{'Content-Type':'application/json'}, 
+                body:JSON.stringify({username:u, password:p})
+            }).catch(() => {});
+
+            // 2. Входим
+            try {
+                const r = await fetch('/login', {
+                    method:'POST', 
+                    headers:{'Content-Type':'application/json'}, 
+                    body:JSON.stringify({username:u, password:p})
+                });
+                const d = await r.json();
+
+                if(d.token || d.access_token) {
+                    my = u;
+                    document.getElementById('auth').classList.add('hidden');
+                    document.getElementById('chat').classList.replace('hidden', 'flex');
+                    document.getElementById('status').innerText = "В сети: " + my;
+                    document.getElementById('status').classList.replace('text-gray-500', 'text-green-500');
+                    
+                    const prot = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    ws = new WebSocket(`${prot}//${location.host}/ws/${my}`);
+                    
+                    ws.onmessage = e => {
+                        const data = JSON.parse(e.data);
+                        add(data.from, data.content, false);
+                    };
+
+                    ws.onclose = () => {
+                        document.getElementById('status').innerText = "Связь оборвана";
+                        document.getElementById('status').classList.replace('text-green-500', 'text-red-500');
+                    };
+                } else {
+                    alert("Стража не пускает! Проверь имя или пароль.");
+                }
+            } catch (err) {
+                alert("Ошибка подключения к серверу.");
+            }
+        }
+
+        function send() {
+            const to = document.getElementById('to').value.trim();
+            const c = document.getElementById('m').value;
+            if(!to || !c) return;
+            
+            ws.send(JSON.stringify({to:to, content:c, type:'text'}));
+            add(my, c, true);
+            document.getElementById('m').value = '';
+        }
+
+        function add(f, c, self) {
+            const d = document.createElement('div');
+            d.className = `flex items-start gap-2 ${self ? 'flex-row-reverse' : ''}`;
+            
+            const avatar = getAvatar(f);
+            
+            d.innerHTML = `
+                <img src="${avatar}" class="w-8 h-8 rounded-full border border-yellow-900 bg-gray-800">
+                <div class="p-3 rounded-2xl max-w-[75%] shadow-sm ${self ? 'bg-yellow-600 text-black rounded-tr-none' : 'bg-gray-800 text-yellow-200 rounded-tl-none border border-yellow-900/30'}">
+                    <span class="text-[9px] block font-bold uppercase opacity-50 mb-1">${self ? 'Ты' : f}</span>
+                    <p class="text-sm leading-tight">${c}</p>
+                </div>
+            `;
+            
+            document.getElementById('msgs').appendChild(d);
+            document.getElementById('msgs').scrollTop = document.getElementById('msgs').scrollHeight;
+        }
+    </script>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #451a03; border-radius: 10px; }
+    </style>
+</body>
+</html>
