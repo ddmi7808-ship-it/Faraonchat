@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>FARAONCHAT</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-yellow-500 h-screen flex flex-col p-4 font-sans">
+    <div class="max-w-md mx-auto w-full flex flex-col h-full border border-yellow-900 rounded-2xl p-4 shadow-2xl bg-gray-950">
+        
+        <div class="flex items-center justify-between mb-4 border-b border-yellow-800 pb-2">
+            <div class="flex items-center gap-3">
+                <img id="my-avatar" src="https://api.dicebear.com/8.x/bottts/svg?seed=Anon" class="w-12 h-12 rounded-full border border-yellow-500 shadow-md shadow-yellow-500/20">
+                <div>
+                    <h1 class="text-xl font-black italic tracking-tighter uppercase">Faraon Chat</h1>
+                    <div id="status" class="text-[10px] text-green-500 uppercase font-bold">В сети: <span id="display-name">Аноним</span></div>
+                </div>
+            </div>
+            <button onclick="toggleAuth()" class="bg-yellow-900/30 p-2 rounded-lg border border-yellow-900 hover:bg-yellow-600 hover:text-black transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+            </button>
+        </div>
+
+        <div id="chat-box" class="flex flex-col h-full overflow-hidden">
+            <div id="messages" class="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 custom-scrollbar"></div>
+            
+            <div class="flex flex-col gap-2 border-t border-yellow-900 pt-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold text-yellow-700 uppercase font-black">Кому:</span>
+                    <input id="target-user" type="text" placeholder="Всем..." class="flex-1 bg-transparent text-sm text-yellow-500 outline-none border-b border-yellow-900 focus:border-yellow-500 transition-all">
+                </div>
+                <div class="flex gap-2">
+                    <input id="message-text" type="text" placeholder="Твое слово..." class="flex-1 p-3 rounded-xl bg-gray-900 border border-yellow-900 outline-none focus:ring-1 focus:ring-yellow-500 text-white shadow-inner">
+                    <button onclick="doSendMessage()" class="bg-yellow-600 text-black px-5 rounded-xl font-black hover:bg-yellow-500 active:scale-90 transition-all shadow-lg shadow-yellow-600/20">></button>
+                </div>
+            </div>
+        </div>
+
+        <div id="auth-box" class="hidden absolute inset-x-4 top-24 bg-gray-950 border border-yellow-500 rounded-2xl p-6 shadow-2xl z-50 space-y-4">
+            <div class="flex justify-between items-center">
+                <p class="text-sm text-yellow-500 font-bold uppercase tracking-widest">Личный профиль</p>
+                <button onclick="toggleAuth()" class="text-yellow-700 hover:text-yellow-500">✕</button>
+            </div>
+            <input id="username" type="text" placeholder="Имя пользователя" class="w-full p-3 rounded-xl bg-gray-900 border border-yellow-900 outline-none text-white">
+            <input id="password" type="password" placeholder="Пароль" class="w-full p-3 rounded-xl bg-gray-900 border border-yellow-900 outline-none text-white">
+            <div class="flex gap-2">
+                <button onclick="doLogin()" class="flex-1 bg-yellow-600 text-black font-black p-3 rounded-xl hover:bg-yellow-500 transition-all">ВОЙТИ</button>
+                <button onclick="doRegister()" class="flex-1 border border-yellow-600 text-yellow-600 font-black p-3 rounded-xl hover:bg-yellow-900/20 transition-all">РЕГА</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket, myName;
+
+        // 1. При загрузке сразу даем анонимное имя и подключаем чат
+        window.onload = () => {
+            const randomID = Math.floor(Math.random() * 999);
+            myName = "Аноним_" + randomID;
+            initChat(myName);
+        };
+
+        function getAvatar(name) {
+            return `https://api.dicebear.com/8.x/avataaars/svg?seed=${name}&backgroundColor=d4a72c`;
+        }
+
+        function toggleAuth() {
+            const box = document.getElementById('auth-box');
+            box.classList.toggle('hidden');
+        }
+
+        function initChat(name) {
+            document.getElementById('display-name').innerText = name;
+            document.getElementById('my-avatar').src = getAvatar(name);
+            
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            if (socket) socket.close();
+            
+            socket = new WebSocket(`${protocol}//${location.host}/ws/${name}`);
+            
+            socket.onmessage = event => {
+                const msg = JSON.parse(event.data);
+                displayMessage(msg.from, msg.content, false);
+            };
+        }
+
+        async function doRegister() {
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value;
+            if(!u || !p) return alert("Заполни данные!");
+
+            const response = await fetch('/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: u, password: p})
+            });
+
+            if(response.ok) alert("Аккаунт создан! Теперь жми ВОЙТИ.");
+            else alert("Такой юзер уже есть.");
+        }
+
+        async function doLogin() {
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value;
+            
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: u, password: p})
+            });
+            
+            const data = await response.json();
+            if(data.token) {
+                myName = u;
+                initChat(myName);
+                toggleAuth();
+                alert("Ты вошел как " + myName);
+            } else {
+                alert("Ошибка входа!");
+            }
+        }
+
+        function doSendMessage() {
+            const to = document.getElementById('target-user').value.trim() || "Всем";
+            const content = document.getElementById('message-text').value;
+            if(!content) return;
+            
+            socket.send(JSON.stringify({to: to, content: content}));
+            displayMessage('Вы', content, true);
+            document.getElementById('message-text').value = '';
+        }
+
+        function displayMessage(user, text, isMe) {
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `flex items-start gap-2 ${isMe ? 'flex-row-reverse' : ''}`;
+            
+            div.innerHTML = `
+                <img src="${getAvatar(user === 'Вы' ? myName : user)}" class="w-8 h-8 rounded-full border border-yellow-900 bg-gray-800">
+                <div class="p-3 rounded-2xl max-w-[75%] ${isMe ? 'bg-yellow-600 text-black rounded-tr-none' : 'bg-gray-800 text-yellow-200 rounded-tl-none border border-yellow-900/30'}">
+                    <span class="text-[9px] block font-bold uppercase opacity-50 mb-1">${user}</span>
+                    <p class="text-sm leading-tight">${text}</p>
+                </div>
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+    </script>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #451a03; border-radius: 10px; }
+    </style>
+</body>
+</html>
